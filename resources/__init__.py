@@ -2,6 +2,7 @@ from collections.abc import Sequence, Iterable
 import json
 
 from .filefactory import make_file_opener, make_path_finder, make_string_opener
+from .LDtk import parse_LDtk_file, LDtkRoot
 from arcade import (
     ArcadeContext,
     Sound,
@@ -20,6 +21,7 @@ import resources.data as data
 import resources.fonts as fonts
 import resources.images as images
 import resources.shaders as shaders
+import resources.levels as levels
 
 __all__ = (
     'read_shader',
@@ -36,7 +38,10 @@ __all__ = (
     'read_json',
     'open_json',
     'load_json',
-    'dump_json'
+    'dump_json',
+    'get_level_path',
+    'load_level',
+    'LDtkRoot'
 )
 
 # Shader methods
@@ -107,3 +112,7 @@ def load_json(name: str, sub_directories: tuple[str, ...] = ()) -> dict: return 
 def dump_json(name: str, data: dict, sub_directoreis: tuple[str, ...] = ()) -> None:
     with open_json(name, sub_directoreis, 'w') as fp:
         json.dump(data, fp)
+
+# Level Methods
+get_level_path = make_path_finder(levels, 'ldtk')
+def load_level(name: str, sub_directoies: tuple[str, ...] = ()) -> LDtkRoot: return parse_LDtk_file(get_level_path(name, sub_directoies))

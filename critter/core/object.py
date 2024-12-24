@@ -35,23 +35,33 @@ class SyncedArray:
 
         self._initialised = False
 
+        self._cpu_stale = False
+        self._gpu_stale = False
+
     def initialise(self, ctx: ArcadeContext):
         self._array = array(self._dtype, [0] * self._size * self._step)
         self._buffer = ctx.buffer(reserve=4 * self._size * self._step) # TODO take into account dtype size
+
+    def sync(self):
+        if self._gpu_stale:
+            self._buffer.write(self._array.tobytes())
+            self._gpu_stale = self._cpu_stale = False
+        elif self._cpu_stale:
+            self._array = array(self._dtype, self._buffer.read())
+            self._gpu_stale = self._cpu_stale = False
 
     def __getitem__(self, idx: int) -> Any:
         return tuple(self._array[idx*self._step + i] for i in range(self._step))
 
     def __setitem__(self, idx: int, value: Any):
-        self._array[]
+        for i in range(self._step):
+            self._array[idx*self._step + i] = value[i]
 
 
 class ObjectList:
 
-    def __init__(self, targets: tuple[tuple[str, str, int], ...], capacity: int = _CAPACITY_DEFAULT, lazy: bool = True):
+    def __init__(self, targets: tuple[tuple[str, int], ...], capacity: int = _CAPACITY_DEFAULT, lazy: bool = True):
         self._lazy = lazy
-        self._cpu_stale = False
-        self._gpu_stale = False
 
         self._capacity = self._slot_capacity = abs(capacity) or _CAPACITY_DEFAULT
         self._freed_slots: Deque[int] = deque()
@@ -80,7 +90,6 @@ class ObjectList:
         
         extend_by = self._capacity
         self._capacity *= 2
-
 
 
     def new(self) -> int:
