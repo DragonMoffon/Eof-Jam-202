@@ -5,7 +5,7 @@ from critter.lib.pool import Pool
 
 from critter.lib.utils import get_window
 
-from resources import load_png
+from resources import load_png, load_program
 
 
 class Tile:
@@ -24,7 +24,7 @@ class Tile:
 
         sprite.visible = True
         sprite.position = self.position[0], self.position[1]
-        sprite.depth = self.position[1]
+        sprite.depth = self.position[2]
         sprite.texture = self.texture
 
     def free_sprite(self):
@@ -40,13 +40,34 @@ class Interactable:
 
 class Room:
     
-    def __init__(self):
-        self.name: str = ""
-        self.tiles: list[Tile] = []
+    def __init__(self, name: str, tiles: tuple[Tile, ...] = (), interactables: tuple[Interactable, ...] = (), bounds: Box = None):
+        self.name: str = name
+        self.tiles: tuple[Tile, ...] = tiles
         self.size = len(self.tiles)
-        self.transparent_count = len((t for t in self.tiles if t.transparent))
-        self.interactable: set[Interactable] = set()
-        self.bounds: Box = LRBTNF(0, 1, 0, 1, 0, 1)
+        self.transparent_count = len([t for t in self.tiles if t.transparent])
+        self.interactable: set[Interactable] = set(interactables)
+
+        # TODO: EW
+        if bounds is None:
+            min_x = 1000000
+            max_x = -1000000
+            min_y = 1000000
+            max_y = -1000000
+            min_z = 1000000
+            max_z = -1000000
+
+            for tile in tiles:
+                x, y, z = tile.position
+                min_x = min(x - 0.5, min_x)
+                max_x = max(x + 0.5, max_x)
+                min_y = min(y - 0.5, min_y)
+                max_y = max(y + 0.5, max_y)
+                min_z = min(z - 0.5, min_z)
+                max_z = max(z + 0.5, max_z)
+            
+            bounds = LRBTNF(min_x, max_x, min_y, max_y, min_z, max_z)
+
+        self.bounds: Box = bounds
 
 class World:
     
@@ -54,6 +75,15 @@ class World:
         self.ctx = ctx or get_window().ctx
 
         default_texture = load_png('tile_1')
+
+        program = load_program(
+            self.ctx,
+            vertex_shader='isometric_sprite_vs',
+            geometry_shader='isometric_sprite_gs',
+            fragment_shader='isometric_sprite_fs'
+        )
+        program['uv_texture'] = 1
+        program['scale'] = 32, 16, 35
 
         self.tiles: Pool[BasicSprite] = Pool([BasicSprite(default_texture, 1.0, visible = False) for _ in range(1024)])
         self.tile_sprites = SpriteList(capacity=1024)
@@ -63,10 +93,15 @@ class World:
         self.transparent_sprites = SpriteList(capacity=128)
         self.transparent_sprites.extend(self.transparent.source)
 
+        self.tile_sprites.program = self.transparent_sprites.program = program
+
         self.interactables: set = set()
         self.rooms: dict[str, Room] = {}
         self.loaded_rooms: set[str] = set()
         self.current_room: Room | None
+
+    def add_room(self, room: Room):
+        self.rooms[room.name] = room
 
     def load_room(self, name: str):
         if name not in self.rooms:

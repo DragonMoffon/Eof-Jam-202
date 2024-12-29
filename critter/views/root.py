@@ -39,8 +39,11 @@ class RootView(View):
 
         self.splash_sprite = BasicSprite(get_default_texture(), 1.0, self.center_x, self.center_y, visible=False)
 
+        self.load_context = SleepTask(self.show_menu, 3)
+        self.load_context.begin()
+
     def on_key_release(self, _symbol, _modifiers):
-        self.window.show_view(MenuView())
+        self.switch_view()
 
     def on_draw(self) -> None:
         self.clear()
@@ -54,7 +57,7 @@ class RootView(View):
         
         if self.splash.duration < clock.GLOBAL_CLOCK.time_since(self.splash_tm):
             if self.splash_idx >= len(self.splashes):
-                self.window.show_view(LoadView(SleepTask(lambda: self.window.show_view(MenuView()), 10.0)))
+                self.switch_view()
                 return
 
             self.splash_tm += self.splash.duration
@@ -68,3 +71,12 @@ class RootView(View):
         self.splash_sprite.alpha = self.splash.alpha(t)
 
         draw_sprite(self.splash_sprite, pixelated=self.splash.pixelated)
+
+    def switch_view(self):
+        if self.load_context.complete:
+            self.show_menu()
+            return
+        self.window.show_view(LoadView(self.load_context))
+
+    def show_menu(self):
+        self.window.show_view(MenuView())

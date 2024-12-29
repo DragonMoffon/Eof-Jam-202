@@ -17,7 +17,7 @@ void main() {
     vec3 pos = vec3(
         (in_pos.x - in_pos.y) * scale.x,
         (in_pos.y + in_pos.x) * scale.y + in_pos.z * scale.z + in_size.y / 2.0,
-        -(in_pos.y + in_pos.x) * scale.y
+        -(in_pos.y + in_pos.x) * scale.y + in_pos.z * scale.z
     );
 
     gl_Position = vec4(pos, 1.0);
