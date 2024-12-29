@@ -1,9 +1,10 @@
 from .core.application import Window
+from .core.context import context
 from .views.root import RootView
 
 def main() -> None:
     win = Window()
-    root = RootView()
+    context.window = win
 
-    win.show_view(root)
+    win.show_view(RootView())
     win.run()

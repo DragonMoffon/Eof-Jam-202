@@ -1,5 +1,5 @@
 """
-Simple Top Down Physics Engine
+Simple Top Down AABB Physics Engine (with cludged depth)
 """
 
 class Constraint:

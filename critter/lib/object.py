@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Deque, Any
 from array import array
 from collections import deque
-from arcade import ArcadeContext
+from arcade import ArcadeContext, get_window
 
 class Attribute[T]:
     
@@ -25,30 +25,31 @@ class Object:
 _CAPACITY_DEFAULT = 128
 class SyncedArray:
 
-    def __init__(self, dtype, step, size):
-        self._array = None
-        self._buffer = None
-
+    def __init__(self, dtype, step, size, ctx: ArcadeContext = None):
         self._size = size
         self._dtype = dtype
         self._step = step
 
-        self._initialised = False
-
         self._cpu_stale = False
         self._gpu_stale = False
 
-    def initialise(self, ctx: ArcadeContext):
+        ctx = ctx or get_window().ctx
+        self._buffer = ctx.buffer(reserve=4 * self._size * self._step)
         self._array = array(self._dtype, [0] * self._size * self._step)
-        self._buffer = ctx.buffer(reserve=4 * self._size * self._step) # TODO take into account dtype size
 
-    def sync(self):
-        if self._gpu_stale:
+    def sync(self, force_cpu: bool = False, force_gpu: bool = False):
+        if self._gpu_stale or force_cpu:
             self._buffer.write(self._array.tobytes())
             self._gpu_stale = self._cpu_stale = False
-        elif self._cpu_stale:
+        elif self._cpu_stale or force_gpu:
             self._array = array(self._dtype, self._buffer.read())
             self._gpu_stale = self._cpu_stale = False
+
+    def extend(self, size: int, extend: int):
+        self._array.extend([0] * extend * self._step)
+        self._buffer.orphan(size=size)
+        
+        self._gpu_stale = True
 
     def __getitem__(self, idx: int) -> Any:
         return tuple(self._array[idx*self._step + i] for i in range(self._step))

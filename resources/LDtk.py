@@ -3,7 +3,6 @@ from enum import StrEnum
 from typing import NamedTuple, Any
 import json
 
-
 @dataclass
 class TilesetRect:
     h: int
