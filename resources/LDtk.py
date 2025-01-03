@@ -12,11 +12,31 @@ class TilesetRect:
     tileset_uid: int
 
 @dataclass
-class Field:
+class EntityReferenceInfo:
+    entity_iid: str
+    layer_iid: str
+    level_iid: str
+    world_iid: str
+
+class FieldType(StrEnum):
+    INT = 'Int'
+    FLOAT = 'Float' 
+    STRING = 'String'
+    BOOL = 'Bool'
+    POINT = 'Point'
+    TILE = 'Tile'
+    ENTITY = 'EntityRef'
+    FILE_PATH = 'FilePath'
+    MULTILINE = 'Multilines'
+    ARRAY = 'Array'
+    ENUM = 'Enum'
+
+@dataclass
+class Field[V]:
     identifer: str
     tile: TilesetRect | None
-    type: str
-    value: Any
+    type: FieldType
+    value: V | None
     def_uid: int
 
 class TileRenderMode(StrEnum):
@@ -159,17 +179,17 @@ class NeighbourObj:
 
 @dataclass
 class Tile:
-    a: float
-    f: int
-    px_x: int
-    px_y: int
+    alpha: float
+    flip: int
+    pos_x: int
+    pos_y: int
     src_x: int
     src_y: int
-    t: int
+    tile_id: int
 
     @property
-    def px(self) -> tuple[int, int]:
-        return self.px_x, self.px_y
+    def pos(self) -> tuple[int, int]:
+        return self.pos_x, self.pos_y
     
     @property
     def src(self) -> tuple[int, int]:
@@ -374,20 +394,92 @@ def _parse_LDtk_defintions(data: dict[str, Any]) -> Definitions:
         [_parse_LDtk_tileset_def(data) for data in data.get('tilesets', [])],
     )
 
+def _parse_LDtk_entity_info(data: dict[str, str] | None) -> EntityReferenceInfo:
+    if data is None:
+        return data
+    
+    return EntityReferenceInfo(
+        data['entityIid'],
+        data['layerIid'],
+        data['levelIid'],
+        data['worldIid']
+    )
+
+def _convert_LDtk_field_type(type_string: str, data: Any | None) -> tuple[FieldType, type, Any]:
+    if type_string in FieldType:
+        typ = FieldType(type_string)
+    elif type_string.startswith('LocalEnum'):
+        typ = FieldType.ENUM
+    elif type_string.startswith('Array'):
+        typ = FieldType.ARRAY
+    else:
+        typ = None
+
+    value = None
+    match typ:
+        case FieldType.INT:
+            cls = int
+        case FieldType.FLOAT:
+            cls = float
+        case FieldType.STRING:
+            cls = str
+        case FieldType.BOOL:
+            cls = bool
+        case FieldType.POINT:
+            cls = tuple[float, float]
+            if data is not None:
+                value = data['cx'], data['cy']
+        case FieldType.TILE:
+            cls = TilesetRect
+            value = _parse_LDtk_tileset_rect(data)
+        case FieldType.ENTITY:
+            cls = EntityReferenceInfo
+            value = _parse_LDtk_entity_info(data)
+        case FieldType.FILE_PATH:
+            cls = str
+        case FieldType.MULTILINE:
+            cls = str
+        case FieldType.ARRAY:
+            sub = type_string.split('<')[-1].strip('>')
+            _, sub_cls, _ = _convert_LDtk_field_type(sub, None)
+            cls = list[sub_cls]
+            if data is not None and sub_cls is not None:
+                value = [sub_cls(v) for v in data]
+        case FieldType.ENUM:
+            cls = str
+        case _:
+            cls = None
+
+    if value is None and cls is not None and data is not None:
+        value = cls(data)
+        
+    return typ, cls, value
+
+def _parse_LDtk_field(data: dict[str, Any]) -> Field:
+    typ, cls, value = _convert_LDtk_field_type(data['__type'], data['__value'])
+
+    return Field[cls](
+        data['__identifier'],
+        _parse_LDtk_tileset_rect(data['__tile']),
+        typ,
+        value,
+        data['defUid']
+    )
+
 def _parse_LDtk_entity(data: dict[str, Any]) -> Entity:
     return Entity(
         data['__grid'][0],
         data['__grid'][1],
-        data['__indentifier'],
+        data['__identifier'],
         data['__pivot'][0],
         data['__pivot'][1],
         data['__smartColor'],
         data['__tags'],
         _parse_LDtk_tileset_rect(data['__tile']),
-        data['worldX'],
-        data['worldY'],
+        data['__worldX'],
+        data['__worldY'],
         data['defUid'],
-        [Field(field['__identifier'], field['__tile'], field['__type'], field['__value'], field['defUid']) for field in data['fieldInstances']],
+        [_parse_LDtk_field(field) for field in data['fieldInstances']],
         data['height'],
         data['width'],
         data['iid'],

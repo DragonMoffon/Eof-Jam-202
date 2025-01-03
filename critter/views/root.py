@@ -39,7 +39,7 @@ class RootView(View):
 
         self.splash_sprite = BasicSprite(get_default_texture(), 1.0, self.center_x, self.center_y, visible=False)
 
-        self.load_context = SleepTask(self.show_menu, 3)
+        self.load_context = SleepTask(self.show_menu, 0.5)
         self.load_context.begin()
 
     def on_key_release(self, _symbol, _modifiers):

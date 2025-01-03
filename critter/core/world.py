@@ -1,11 +1,17 @@
+from typing import Any
+
 from arcade import SpriteList, BasicSprite, ArcadeContext, Vec2, Vec3, Texture
 from arcade.types import Box, LRBTNF
 
 from critter.lib.pool import Pool
-
+from critter.lib.loading import Task
 from critter.lib.utils import get_window
 
 from resources import load_png, load_program
+from resources.LDtk import LDtkRoot, TilesetDefintion, Level
+
+from .context import context
+from .tile import Tiles
 
 
 class Tile:
@@ -73,8 +79,9 @@ class World:
     
     def __init__(self, ctx: ArcadeContext = None):
         self.ctx = ctx or get_window().ctx
+        self.raw_data: LDtkRoot = None
 
-        default_texture = load_png('tile_1')
+        default_texture = Tiles.ground
 
         program = load_program(
             self.ctx,
@@ -85,11 +92,11 @@ class World:
         program['uv_texture'] = 1
         program['scale'] = 32, 16, 35
 
-        self.tiles: Pool[BasicSprite] = Pool([BasicSprite(default_texture, 1.0, visible = False) for _ in range(1024)])
+        self.tiles: Pool[BasicSprite] = Pool([BasicSprite(default_texture, 1.0, visible=False) for _ in range(8192)])
         self.tile_sprites = SpriteList(capacity=1024)
         self.tile_sprites.extend(self.tiles.source)
 
-        self.transparent: Pool[BasicSprite] = Pool([BasicSprite(default_texture, 1.0, visible=False) for _ in range(128)])
+        self.transparent: Pool[BasicSprite] = Pool([BasicSprite(default_texture, 1.0, visible=False) for _ in range(1024)])
         self.transparent_sprites = SpriteList(capacity=128)
         self.transparent_sprites.extend(self.transparent.source)
 
@@ -100,8 +107,83 @@ class World:
         self.loaded_rooms: set[str] = set()
         self.current_room: Room | None
 
-    def add_room(self, room: Room):
-        self.rooms[room.name] = room
+        self.tile_textures: dict[int, tuple[Texture, bool]] = {}
+        self.tile_names: dict[int, str] = {}
+
+    def load_world(self):
+        for room in self.loaded_rooms:
+            self.unload_room(room)
+        self.current_room = None
+        self.rooms = {}
+        self.tile_textures = {}
+        self.tile_names = {}
+
+        self.raw_data = context.active.world_data
+
+        for tileset in self.raw_data.defs.tilesets:
+            self.add_tileset(tileset)
+
+        for level in self.raw_data.levels:
+            self.add_room(level)
+
+
+    def add_tileset(self, definition: TilesetDefintion):
+        for tile in definition.custom_data:
+            tile_name, *other = tile.data.split('\n')
+            tile_transparent = 'transparent' in other
+            try:
+                tile_texture = Tiles(tile_name)
+            except KeyError:
+                continue
+            self.tile_textures[tile.tile_id] = tile_texture, tile_transparent
+            self.tile_names[tile.tile_id] = tile_name 
+
+    def add_room(self, data: Level):
+        print(data.identifier)
+        wx, wy, wz = data.world_x / 4, data.world_y / 4, data.world_depth * 5
+        layers = {layer.identifier: layer for layer in data.layer_instances}
+
+        self.rooms[data.identifier] = None
+        heights = layers['HeightOffset'].int_grid_csv
+        terrain_tiles = layers['Terrain'].grid_tiles
+
+        r_width = layers['Terrain'].c_width
+        r_height = layers['Terrain'].c_height
+
+        tiles = []
+        for terrain in terrain_tiles:
+            tx = int(terrain.pos_x / 4)
+            ty = int(terrain.pos_y / 4)
+
+            idx = ty * r_width + tx
+            height = heights[idx]
+
+            t_name = self.tile_names[terrain.tile_id]
+
+            tile_texture, tile_transparent = self.tile_textures[terrain.tile_id]
+            
+            # -- Column --
+            
+            # Check surrounding heights or at the edge of room to choose whether to generate a column
+            at_edge = 0 == tx or tx == r_width-1 or ty == 0 or ty == r_height-1
+            at_ledge = False if at_edge else (min(heights[idx + 1], heights[idx - 1], heights[idx + r_width], heights[idx - r_width]) < height)
+            is_valid = t_name != 'bridge'
+            if (at_edge or at_ledge) and is_valid:
+                column_texture, column_transparent = Tiles.block, False
+                column_start, column_end = 0, height
+                if t_name == 'water':
+                    column_texture, column_transparent = Tiles.water_column, True
+                    tile_texture = Tiles.water_fall
+                    column_start = 1
+                for h in range(column_start, column_end):
+                    tiles.append(Tile(column_texture, column_transparent, (wx + tx, wy + ty, wz + h)))
+
+            # Top Layer
+            tiles.append(Tile(tile_texture, tile_transparent, (wx + tx, wy + ty, wz + height)))
+
+        print(len(tiles))
+
+        self.rooms[data.identifier] = Room(data.identifier, tuple(tiles))
 
     def load_room(self, name: str):
         if name not in self.rooms:
@@ -126,7 +208,7 @@ class World:
             tile.set_sprite(sprite)
 
         if room.transparent_count:
-            self.transparent_sprites.sort(key=lambda t: t.x + t.y)
+            self.transparent_sprites.sort(key=lambda t: 1.1*t.depth - (t.center_x + t.center_y))
 
         self.interactables.update(room.interactable)
 
